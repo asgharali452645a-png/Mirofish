@@ -224,16 +224,26 @@ class GraphBuilderService:
         # 动态创建实体类型
         entity_types = {}
         for entity_def in ontology.get("entity_types", []):
-            name = entity_def["name"]
-            description = entity_def.get("description", f"A {name} entity.")
+            if isinstance(entity_def, str):
+                name = entity_def
+                description = f"A {name} entity."
+                attributes = []
+            else:
+                name = entity_def["name"]
+                description = entity_def.get("description", f"A {name} entity.")
+                attributes = entity_def.get("attributes", [])
             
             # 创建属性字典和类型注解（Pydantic v2 需要）
             attrs = {"__doc__": description}
             annotations = {}
             
-            for attr_def in entity_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
-                attr_desc = attr_def.get("description", attr_name)
+            for attr_def in attributes:
+                if isinstance(attr_def, str):
+                    attr_name = safe_attr_name(attr_def)
+                    attr_desc = attr_def
+                else:
+                    attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
+                    attr_desc = attr_def.get("description", attr_name)
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
                 annotations[attr_name] = Optional[EntityText]  # 类型注解
@@ -248,16 +258,28 @@ class GraphBuilderService:
         # 动态创建边类型
         edge_definitions = {}
         for edge_def in ontology.get("edge_types", []):
-            name = edge_def["name"]
-            description = edge_def.get("description", f"A {name} relationship.")
+            if isinstance(edge_def, str):
+                name = edge_def
+                description = f"A {name} relationship."
+                attributes = []
+                source_targets_list = []
+            else:
+                name = edge_def["name"]
+                description = edge_def.get("description", f"A {name} relationship.")
+                attributes = edge_def.get("attributes", [])
+                source_targets_list = edge_def.get("source_targets", [])
             
             # 创建属性字典和类型注解
             attrs = {"__doc__": description}
             annotations = {}
             
-            for attr_def in edge_def.get("attributes", []):
-                attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
-                attr_desc = attr_def.get("description", attr_name)
+            for attr_def in attributes:
+                if isinstance(attr_def, str):
+                    attr_name = safe_attr_name(attr_def)
+                    attr_desc = attr_def
+                else:
+                    attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
+                    attr_desc = attr_def.get("description", attr_name)
                 # Zep API 需要 Field 的 description，这是必需的
                 attrs[attr_name] = Field(description=attr_desc, default=None)
                 annotations[attr_name] = Optional[str]  # 边属性用str类型
@@ -271,16 +293,26 @@ class GraphBuilderService:
             
             # 构建source_targets
             source_targets = []
-            for st in edge_def.get("source_targets", []):
+            for st in source_targets_list:
+                if isinstance(st, dict):
+                    source_targets.append(
+                        EntityEdgeSourceTarget(
+                            source=st.get("source", "Entity"),
+                            target=st.get("target", "Entity")
+                        )
+                    )
+                # If not dict, skip or handle
+            
+            # If no source_targets specified, add default
+            if not source_targets:
                 source_targets.append(
                     EntityEdgeSourceTarget(
-                        source=st.get("source", "Entity"),
-                        target=st.get("target", "Entity")
+                        source="Person",
+                        target="Organization"
                     )
                 )
             
-            if source_targets:
-                edge_definitions[name] = (edge_class, source_targets)
+            edge_definitions[name] = (edge_class, source_targets)
         
         # 调用Zep API设置本体
         if entity_types or edge_definitions:
