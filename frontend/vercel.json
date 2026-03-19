@@ -6,7 +6,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/MiroFish-main/MiroFish-main/$1"
+      "destination": "/index.html"
     }
   ]
 }
