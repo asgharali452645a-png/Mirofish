@@ -15,6 +15,7 @@ from zep_cloud import EpisodeData, EntityEdgeSourceTarget
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
+from ..utils.logger import get_logger
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from .text_processor import TextProcessor
 
@@ -208,6 +209,9 @@ class GraphBuilderService:
         if isinstance(ontology, str):
             ontology = json.loads(ontology)
         
+        # 获取日志器
+        logger = get_logger('mirofish.graph_builder')
+
         # 抑制 Pydantic v2 关于 Field(default=None) 的警告
         # 这是 Zep SDK 要求的用法，警告来自动态类创建，可以安全忽略
         warnings.filterwarnings('ignore', category=UserWarning, module='pydantic')
@@ -238,15 +242,22 @@ class GraphBuilderService:
             annotations = {}
             
             for attr_def in attributes:
-                if isinstance(attr_def, str):
-                    attr_name = safe_attr_name(attr_def)
-                    attr_desc = attr_def
-                else:
-                    attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
-                    attr_desc = attr_def.get("description", attr_name)
-                # Zep API 需要 Field 的 description，这是必需的
-                attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[EntityText]  # 类型注解
+                try:
+                    if isinstance(attr_def, str):
+                        attr_name = safe_attr_name(attr_def)
+                        attr_desc = attr_def
+                    else:
+                        attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
+                        attr_desc = attr_def.get("description", attr_name)
+
+                    # Zep API 需要 Field 的 description，这是必需的
+                    attrs[attr_name] = Field(description=attr_desc, default=None)
+                    annotations[attr_name] = Optional[EntityText]  # 类型注解
+                except Exception as e:
+                    logger.warning(
+                        "跳过无效属性定义（%r），错误：%s", attr_def, str(e)
+                    )
+                    continue
             
             attrs["__annotations__"] = annotations
             
@@ -274,15 +285,22 @@ class GraphBuilderService:
             annotations = {}
             
             for attr_def in attributes:
-                if isinstance(attr_def, str):
-                    attr_name = safe_attr_name(attr_def)
-                    attr_desc = attr_def
-                else:
-                    attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
-                    attr_desc = attr_def.get("description", attr_name)
-                # Zep API 需要 Field 的 description，这是必需的
-                attrs[attr_name] = Field(description=attr_desc, default=None)
-                annotations[attr_name] = Optional[str]  # 边属性用str类型
+                try:
+                    if isinstance(attr_def, str):
+                        attr_name = safe_attr_name(attr_def)
+                        attr_desc = attr_def
+                    else:
+                        attr_name = safe_attr_name(attr_def["name"])  # 使用安全名称
+                        attr_desc = attr_def.get("description", attr_name)
+
+                    # Zep API 需要 Field 的 description，这是必需的
+                    attrs[attr_name] = Field(description=attr_desc, default=None)
+                    annotations[attr_name] = Optional[str]  # 边属性用str类型
+                except Exception as e:
+                    logger.warning(
+                        "跳过无效边属性定义（%r），错误：%s", attr_def, str(e)
+                    )
+                    continue
             
             attrs["__annotations__"] = annotations
             
