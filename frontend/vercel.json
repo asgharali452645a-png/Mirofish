@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://alig45-mirofish-server.hf.space/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/MiroFish-main/MiroFish-main/$1"
+    }
+  ]
+}
