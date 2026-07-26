@@ -489,17 +489,18 @@ def build_graph():
                 
             except Exception as e:
                 # 更新项目状态为失败
-                build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
+                error_message = str(e)
+                build_logger.error(f"[{task_id}] 图谱构建失败: {error_message}")
                 build_logger.debug(traceback.format_exc())
                 
                 project.status = ProjectStatus.FAILED
-                project.error = str(e)
+                project.error = error_message
                 ProjectManager.save_project(project)
                 
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
-                    message=f"构建失败: {str(e)}",
+                    message=f"构建失败: {error_message}",
                     error=traceback.format_exc()
                 )
         

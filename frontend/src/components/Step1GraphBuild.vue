@@ -140,6 +140,11 @@
               <span class="stat-label">SCHEMA类型</span>
             </div>
           </div>
+
+          <div v-if="buildProgress?.message" class="build-status-block" :class="{ 'build-error': buildProgress?.status === 'failed' }">
+            <div class="build-status-title">{{ buildProgress?.status === 'failed' ? '构建失败' : '构建状态' }}</div>
+            <div class="build-status-message">{{ buildProgress.message }}</div>
+          </div>
         </div>
       </div>
 
@@ -271,6 +276,34 @@ watch(() => props.systemLogs.length, () => {
 </script>
 
 <style scoped>
+.build-status-block {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f5f7fb;
+  border: 1px solid #e4e8f0;
+}
+
+.build-status-block.build-error {
+  background: #fff4f4;
+  border-color: #f6c7c7;
+  color: #b42318;
+}
+
+.build-status-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.build-status-message {
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 .workbench-panel {
   height: 100%;
   background-color: #FAFAFA;

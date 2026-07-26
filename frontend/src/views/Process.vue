@@ -337,6 +337,11 @@
                   <span class="progress-percent">{{ buildProgress.progress }}%</span>
                 </div>
               </div>
+
+              <div v-if="error" class="detail-section error-state">
+                <div class="detail-label">构建失败详情</div>
+                <div class="error-message">{{ error }}</div>
+              </div>
               
               <div class="detail-section" v-if="graphData">
                 <div class="detail-label">构建结果</div>
@@ -540,6 +545,7 @@ const getPhaseStatusClass = (phase) => {
 }
 
 const getPhaseStatusText = (phase) => {
+  if (error.value) return '失败'
   if (currentPhase.value > phase) return '已完成'
   if (currentPhase.value === phase) {
     if (phase === 1 && buildProgress.value) {

@@ -8,6 +8,153 @@ from typing import Dict, Any, List, Optional
 from ..utils.llm_client import LLMClient
 
 
+DEFAULT_ONTOLOGY = {
+    "entity_types": [
+        {
+            "name": "Person",
+            "description": "Any individual person involved in the event.",
+            "attributes": [
+                {"name": "full_name", "type": "text", "description": "Full name of the person"},
+                {"name": "role", "type": "text", "description": "Role or occupation"},
+            ],
+            "examples": ["ordinary citizen", "anonymous netizen"],
+        },
+        {
+            "name": "Organization",
+            "description": "Any organization involved in the event.",
+            "attributes": [
+                {"name": "org_name", "type": "text", "description": "Name of the organization"},
+                {"name": "org_type", "type": "text", "description": "Type of organization"},
+            ],
+            "examples": ["community group", "small business"],
+        },
+        {
+            "name": "Student",
+            "description": "A student involved in the event.",
+            "attributes": [
+                {"name": "full_name", "type": "text", "description": "Full name of the student"},
+                {"name": "school", "type": "text", "description": "School or institution"},
+            ],
+            "examples": ["student reporter"],
+        },
+        {
+            "name": "Professor",
+            "description": "An academic or professor involved in the event.",
+            "attributes": [
+                {"name": "full_name", "type": "text", "description": "Full name of the professor"},
+                {"name": "department", "type": "text", "description": "Department or field"},
+            ],
+            "examples": ["department chair"],
+        },
+        {
+            "name": "Journalist",
+            "description": "A journalist or reporter covering the incident.",
+            "attributes": [
+                {"name": "full_name", "type": "text", "description": "Full name of the journalist"},
+                {"name": "media_outlet", "type": "text", "description": "Media outlet"},
+            ],
+            "examples": ["news reporter"],
+        },
+        {
+            "name": "Official",
+            "description": "A government official or public authority figure.",
+            "attributes": [
+                {"name": "full_name", "type": "text", "description": "Full name of the official"},
+                {"name": "agency", "type": "text", "description": "Agency or department"},
+            ],
+            "examples": ["public spokesperson"],
+        },
+        {
+            "name": "University",
+            "description": "An academic institution involved in the situation.",
+            "attributes": [
+                {"name": "org_name", "type": "text", "description": "Name of the university"},
+                {"name": "location", "type": "text", "description": "Location of the institution"},
+            ],
+            "examples": ["university campus"],
+        },
+        {
+            "name": "MediaOutlet",
+            "description": "A media organization producing public content.",
+            "attributes": [
+                {"name": "org_name", "type": "text", "description": "Name of the media outlet"},
+                {"name": "platform", "type": "text", "description": "Platform or channel"},
+            ],
+            "examples": ["news channel"],
+        },
+        {
+            "name": "CommunityGroup",
+            "description": "A community or interest-based group involved in the event.",
+            "attributes": [
+                {"name": "org_name", "type": "text", "description": "Name of the community group"},
+                {"name": "focus", "type": "text", "description": "Group focus or theme"},
+            ],
+            "examples": ["online community"],
+        },
+        {
+            "name": "PublicFigure",
+            "description": "A publicly visible figure whose statements influence opinion.",
+            "attributes": [
+                {"name": "full_name", "type": "text", "description": "Full name of the public figure"},
+                {"name": "platform", "type": "text", "description": "Primary platform or venue"},
+            ],
+            "examples": ["influencer"],
+        },
+    ],
+    "edge_types": [
+        {
+            "name": "WORKS_FOR",
+            "description": "A person works for an organization.",
+            "source_targets": [{"source": "Person", "target": "Organization"}],
+            "attributes": [],
+        },
+        {
+            "name": "STUDIES_AT",
+            "description": "A student studies at an institution.",
+            "source_targets": [{"source": "Student", "target": "University"}],
+            "attributes": [],
+        },
+        {
+            "name": "REPORTS_ON",
+            "description": "A journalist reports on an entity or event.",
+            "source_targets": [{"source": "Journalist", "target": "Organization"}],
+            "attributes": [],
+        },
+        {
+            "name": "REPRESENTS",
+            "description": "An official represents an organization or public body.",
+            "source_targets": [{"source": "Official", "target": "Organization"}],
+            "attributes": [],
+        },
+        {
+            "name": "COMMENTS_ON",
+            "description": "A person comments on a public issue or another person.",
+            "source_targets": [{"source": "Person", "target": "Person"}],
+            "attributes": [],
+        },
+        {
+            "name": "SUPPORTS",
+            "description": "A person or organization supports another actor.",
+            "source_targets": [{"source": "Person", "target": "Organization"}],
+            "attributes": [],
+        },
+        {
+            "name": "OPPOSES",
+            "description": "A person or organization opposes another actor.",
+            "source_targets": [{"source": "Person", "target": "Organization"}],
+            "attributes": [],
+        },
+        {
+            "name": "AFFILIATED_WITH",
+            "description": "A person or organization is affiliated with another entity.",
+            "source_targets": [{"source": "Person", "target": "Organization"}],
+            "attributes": [],
+        },
+    ],
+    "analysis_summary": "Fallback ontology generated because the LLM request failed. This schema provides a basic social-simulation structure for continuing the workflow.",
+}
+
+
 # 本体生成的系统提示词
 ONTOLOGY_SYSTEM_PROMPT = """你是一个专业的知识图谱本体设计专家。你的任务是分析给定的文本内容和模拟需求，设计适合**社交媒体舆论模拟**的实体类型和关系类型。
 
@@ -193,12 +340,18 @@ class OntologyGenerator:
             {"role": "user", "content": user_message}
         ]
         
-        # 调用LLM
-        result = self.llm_client.chat_json(
-            messages=messages,
-            temperature=0.3,
-            max_tokens=4096
-        )
+        # 调用LLM；如果模型失败则回退到默认本体，避免接口 500
+        try:
+            result = self.llm_client.chat_json(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=4096
+            )
+        except Exception as exc:
+            result = json.loads(json.dumps(DEFAULT_ONTOLOGY))
+            result["analysis_summary"] = (
+                f"Fallback ontology generated because the LLM request failed: {exc}"
+            )
         
         # 验证和后处理
         result = self._validate_and_process(result)

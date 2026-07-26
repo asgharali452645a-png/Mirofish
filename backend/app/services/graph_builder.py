@@ -9,6 +9,7 @@ import time
 import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
+from zep_cloud.core.api_error import ApiError
 
 from zep_cloud.client import Zep
 from zep_cloud import EpisodeData, EntityEdgeSourceTarget
@@ -50,6 +51,20 @@ class GraphBuilderService:
         
         self.client = Zep(api_key=self.api_key)
         self.task_manager = TaskManager()
+
+    def _raise_with_context(self, exc: Exception) -> None:
+        """Convert Zep API errors into a clearer user-facing message."""
+        message = str(exc)
+        if isinstance(exc, ApiError):
+            status = getattr(exc, "status_code", None)
+            body = getattr(exc, "body", None)
+            if status == 401:
+                raise ValueError(
+                    "ZEP API 身份验证失败：请检查 .env 中的 ZEP_API_KEY 是否正确且未过期。"
+                ) from exc
+            if status:
+                raise ValueError(f"ZEP API 请求失败（status={status}）：{body or message}") from exc
+        raise ValueError(f"ZEP 图谱构建失败: {message}") from exc
     
     def build_graph_async(
         self,
@@ -189,11 +204,14 @@ class GraphBuilderService:
         """创建Zep图谱（公开方法）"""
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
         
-        self.client.graph.create(
-            graph_id=graph_id,
-            name=name,
-            description="MiroFish Social Simulation Graph"
-        )
+        try:
+            self.client.graph.create(
+                graph_id=graph_id,
+                name=name,
+                description="MiroFish Social Simulation Graph"
+            )
+        except Exception as exc:
+            self._raise_with_context(exc)
         
         return graph_id
     
