@@ -1,109 +1,174 @@
 """
-LLM客户端封装
-统一使用OpenAI格式调用
+LLM client wrapper
+Compatible with any OpenAI-compatible API (DashScope / OpenRouter / OpenAI / Gemini proxy)
 """
 
 import json
 import re
+import traceback
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
 from ..config import Config
 
-
 class LLMClient:
-    """LLM客户端"""
+"""LLM Client"""
 
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None
-    ):
-        self.api_key = (api_key or Config.LLM_API_KEY or "").strip()
-        self.base_url = base_url or Config.LLM_BASE_URL
-        self.model = model or Config.LLM_MODEL_NAME
-        self.is_unavailable = False
+````
+def __init__(
+    self,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None
+):
+    # Read values from config / environment
+    self.api_key = (api_key or Config.LLM_API_KEY or "").strip()
+    self.base_url = (base_url or Config.LLM_BASE_URL or "").strip()
+    self.model = (model or Config.LLM_MODEL_NAME or "").strip()
 
-        if not self.api_key or self.api_key.lower() in {"your_api_key_here", "dummy", "placeholder", "null", "none"}:
-            self.is_unavailable = True
-            self.client = None
-            return
+    self.is_unavailable = False
 
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
+    # Validate API key
+    invalid_values = {
+        "",
+        "your_api_key_here",
+        "dummy",
+        "placeholder",
+        "null",
+        "none"
+    }
+
+    if self.api_key.lower() in invalid_values:
+        self.is_unavailable = True
+        self.client = None
+        return
+
+    # Create OpenAI-compatible client
+    self.client = OpenAI(
+        api_key=self.api_key,
+        base_url=self.base_url
+    )
+
+def chat(
+    self,
+    messages: List[Dict[str, str]],
+    temperature: float = 0.7,
+    max_tokens: int = 4096,
+    response_format: Optional[Dict] = None
+) -> str:
+    """
+    Send chat request
+
+    Returns:
+        Model response text
+    """
+
+    if self.is_unavailable or self.client is None:
+        raise RuntimeError(
+            "LLM service unavailable: no valid API key configured"
         )
-    
-    def chat(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        response_format: Optional[Dict] = None
-    ) -> str:
-        """
-        发送聊天请求
-        
-        Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数
-            response_format: 响应格式（如JSON模式）
-            
-        Returns:
-            模型响应文本
-        """
-        if self.is_unavailable or self.client is None:
-            raise RuntimeError("LLM service unavailable: no valid API key configured")
 
-        kwargs = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        
-        if response_format:
-            kwargs["response_format"] = response_format
-        
+    kwargs = {
+        "model": self.model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    if response_format:
+        kwargs["response_format"] = response_format
+
+    try:
+        print("\n========== LLM CONFIG ==========")
+        print("Base URL:", self.base_url)
+        print("Model:", self.model)
+        print("API Key:", self.api_key[:10] + "...")
+        print("================================\n")
+
         response = self.client.chat.completions.create(**kwargs)
+
+        print("\n========== RAW RESPONSE ==========")
+        print(response)
+        print("==================================\n")
+
+        if not response.choices:
+            raise ValueError("LLM returned no choices")
+
         content = response.choices[0].message.content
-        # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
-        content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+
+        if content is None:
+            raise ValueError("LLM returned empty content")
+
+        # Remove <think>...</think> blocks used by some models
+        content = re.sub(
+            r'<think>[\s\S]*?</think>',
+            '',
+            content
+        ).strip()
+
+        print("========== CLEANED CONTENT ==========")
+        print(content[:1000])  # print first 1000 chars only
+        print("=====================================\n")
+
         return content
-    
-    def chat_json(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: float = 0.3,
-        max_tokens: int = 4096
-    ) -> Dict[str, Any]:
-        """
-        发送聊天请求并返回JSON
-        
-        Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大token数
-            
-        Returns:
-            解析后的JSON对象
-        """
-        response = self.chat(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"}
+
+    except Exception as e:
+        print("\n========== LLM ERROR ==========")
+        traceback.print_exc()
+        print("Error Type:", type(e).__name__)
+        print("Error Message:", str(e))
+        print("Base URL:", self.base_url)
+        print("Model:", self.model)
+        print("================================\n")
+        raise
+
+def chat_json(
+    self,
+    messages: List[Dict[str, str]],
+    temperature: float = 0.3,
+    max_tokens: int = 4096
+) -> Dict[str, Any]:
+    """
+    Send chat request and parse JSON response
+    """
+
+    response = self.chat(
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"}
+    )
+
+    # Remove markdown code fences
+    cleaned_response = response.strip()
+    cleaned_response = re.sub(
+        r'^```(?:json)?\s*\n?',
+        '',
+        cleaned_response,
+        flags=re.IGNORECASE
+    )
+    cleaned_response = re.sub(
+        r'\n?```\s*$',
+        '',
+        cleaned_response
+    )
+    cleaned_response = cleaned_response.strip()
+
+    print("\n========== JSON TO PARSE ==========")
+    print(cleaned_response[:2000])  # first 2000 chars
+    print("===================================\n")
+
+    try:
+        return json.loads(cleaned_response)
+
+    except json.JSONDecodeError as e:
+        print("\n========== JSON ERROR ==========")
+        print("JSON Parse Error:", str(e))
+        print("Raw Response:")
+        print(cleaned_response)
+        print("================================\n")
+
+        raise ValueError(
+            f"LLM returned invalid JSON: {cleaned_response}"
         )
-        # 清理markdown代码块标记
-        cleaned_response = response.strip()
-        cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
-        cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response)
-        cleaned_response = cleaned_response.strip()
-
-        try:
-            return json.loads(cleaned_response)
-        except json.JSONDecodeError:
-            raise ValueError(f"LLM返回的JSON格式无效: {cleaned_response}")
-
+````
