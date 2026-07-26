@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from app.services.ontology_generator import OntologyGenerator
 from app.services.graph_builder import GraphBuilderService
+from app.utils.llm_client import LLMClient
 
 
 class DummyLLMClient:
@@ -14,6 +15,11 @@ class DummyLLMClient:
 
 
 class OntologyGeneratorFallbackTest(unittest.TestCase):
+    def test_missing_llm_key_does_not_crash_client_initialization(self):
+        client = LLMClient(api_key=None)
+        self.assertIsNone(client.client)
+        self.assertTrue(client.is_unavailable)
+
     def test_generate_returns_default_ontology_when_llm_fails(self):
         generator = OntologyGenerator(llm_client=DummyLLMClient())
         ontology = generator.generate(

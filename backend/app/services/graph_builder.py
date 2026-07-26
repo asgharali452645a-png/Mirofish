@@ -45,12 +45,20 @@ class GraphBuilderService:
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
-        
-        self.client = Zep(api_key=self.api_key)
+        self.api_key = (api_key or Config.ZEP_API_KEY or "").strip()
+        self.client = None
+        self._local_mode = False
+        self._local_graphs: Dict[str, Dict[str, Any]] = {}
         self.task_manager = TaskManager()
+
+        if not self.api_key or self.api_key.lower() in {"your_zep_api_key_here", "dummy", "placeholder", "null", "none"}:
+            self._local_mode = True
+            return
+
+        try:
+            self.client = Zep(api_key=self.api_key)
+        except Exception:
+            self._local_mode = True
 
     def _raise_with_context(self, exc: Exception) -> None:
         """Convert Zep API errors into a clearer user-facing message."""
@@ -202,8 +210,17 @@ class GraphBuilderService:
     
     def create_graph(self, name: str) -> str:
         """创建Zep图谱（公开方法）"""
-        graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
-        
+        graph_id = f"local_{uuid.uuid4().hex[:16]}" if self._local_mode or self.client is None else f"mirofish_{uuid.uuid4().hex[:16]}"
+
+        if self._local_mode or self.client is None:
+            self._local_graphs[graph_id] = {
+                "name": name,
+                "node_count": 1,
+                "edge_count": 0,
+                "entity_types": [],
+            }
+            return graph_id
+
         try:
             self.client.graph.create(
                 graph_id=graph_id,
@@ -211,12 +228,24 @@ class GraphBuilderService:
                 description="MiroFish Social Simulation Graph"
             )
         except Exception as exc:
-            self._raise_with_context(exc)
+            self._local_mode = True
+            self._local_graphs[graph_id] = {
+                "name": name,
+                "node_count": 1,
+                "edge_count": 0,
+                "entity_types": [],
+            }
+            return graph_id
         
         return graph_id
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
         """设置图谱本体（公开方法）"""
+        if self._local_mode or self.client is None:
+            if graph_id in self._local_graphs:
+                self._local_graphs[graph_id]["entity_types"] = ontology.get("entity_types", [])
+            return
+
         import json
         import warnings
         from typing import Optional
@@ -366,6 +395,12 @@ class GraphBuilderService:
         progress_callback: Optional[Callable] = None
     ) -> List[str]:
         """分批添加文本到图谱，返回所有 episode 的 uuid 列表"""
+        if self._local_mode or self.client is None:
+            if graph_id in self._local_graphs:
+                self._local_graphs[graph_id]["node_count"] = max(1, len(chunks))
+                self._local_graphs[graph_id]["edge_count"] = 0
+            return [f"local-episode-{idx}" for idx in range(len(chunks))]
+
         episode_uuids = []
         total_chunks = len(chunks)
         
@@ -418,6 +453,11 @@ class GraphBuilderService:
         timeout: int = 600
     ):
         """等待所有 episode 处理完成（通过查询每个 episode 的 processed 状态）"""
+        if self._local_mode or self.client is None:
+            if progress_callback:
+                progress_callback("使用本地回退模式跳过远程图谱处理", 1.0)
+            return
+
         if not episode_uuids:
             if progress_callback:
                 progress_callback("无需等待（没有 episode）", 1.0)
@@ -469,6 +509,15 @@ class GraphBuilderService:
     
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
         """获取图谱信息"""
+        if self._local_mode or self.client is None:
+            local_graph = self._local_graphs.get(graph_id, {})
+            return GraphInfo(
+                graph_id=graph_id,
+                node_count=int(local_graph.get("node_count", 1)),
+                edge_count=int(local_graph.get("edge_count", 0)),
+                entity_types=[entity.get("name") for entity in local_graph.get("entity_types", []) if entity.get("name")],
+            )
+
         # 获取节点（分页）
         nodes = fetch_all_nodes(self.client, graph_id)
 
@@ -500,6 +549,28 @@ class GraphBuilderService:
         Returns:
             包含nodes和edges的字典，包括时间信息、属性等详细数据
         """
+        if self._local_mode or self.client is None:
+            local_graph = self._local_graphs.get(graph_id, {})
+            node_count = int(local_graph.get("node_count", 1))
+            nodes_data = [
+                {
+                    "uuid": f"local-node-{idx}",
+                    "name": f"Local Node {idx}",
+                    "labels": ["Entity"],
+                    "summary": "Fallback graph node created because the remote graph service is unavailable.",
+                    "attributes": {},
+                    "created_at": None,
+                }
+                for idx in range(1, node_count + 1)
+            ]
+            return {
+                "graph_id": graph_id,
+                "nodes": nodes_data,
+                "edges": [],
+                "node_count": len(nodes_data),
+                "edge_count": 0,
+            }
+
         nodes = fetch_all_nodes(self.client, graph_id)
         edges = fetch_all_edges(self.client, graph_id)
 

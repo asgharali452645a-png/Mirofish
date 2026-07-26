@@ -13,20 +13,23 @@ from ..config import Config
 
 class LLMClient:
     """LLM客户端"""
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model: Optional[str] = None
     ):
-        self.api_key = api_key or Config.LLM_API_KEY
+        self.api_key = (api_key or Config.LLM_API_KEY or "").strip()
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME
-        
-        if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
-        
+        self.is_unavailable = False
+
+        if not self.api_key or self.api_key.lower() in {"your_api_key_here", "dummy", "placeholder", "null", "none"}:
+            self.is_unavailable = True
+            self.client = None
+            return
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
@@ -51,6 +54,9 @@ class LLMClient:
         Returns:
             模型响应文本
         """
+        if self.is_unavailable or self.client is None:
+            raise RuntimeError("LLM service unavailable: no valid API key configured")
+
         kwargs = {
             "model": self.model,
             "messages": messages,
