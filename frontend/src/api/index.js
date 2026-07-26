@@ -1,8 +1,12 @@
 import axios from 'axios'
 
 // 创建axios实例
+const defaultBaseUrl = import.meta.env.PROD
+  ? (import.meta.env.VITE_API_BASE_URL || 'https://mirofish-backend.onrender.com')
+  : (import.meta.env.VITE_API_BASE_URL || '')
+
 const service = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  baseURL: defaultBaseUrl,
   timeout: 300000, // 5分钟超时（本体生成可能需要较长时间）
   headers: {
     'Content-Type': 'application/json'
